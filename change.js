@@ -142,33 +142,38 @@ data = new Proxy(data, {
   },
 });
 
-templates.forEach((template) => {
-  const name = template.getAttribute("name");
-  components[name] = class extends HTMLElement {
-    constructor() {
-      super();
-      this.attachShadow({ mode: "open" });
-      const context = Array.from(this.attributes).reduce((acc, attr) => {
-        acc[attr.name] = { value: attr.value, type: "text" };
-        return acc;
-      }, {});
+function render() {
+  templates.forEach((template) => {
+    const name = template.getAttribute("name");
+    components[name] = class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" });
+        const context = Array.from(this.attributes).reduce((acc, attr) => {
+          acc[attr.name] = { value: attr.value, type: "text" };
+          return acc;
+        }, {});
 
-      Object.keys(data).forEach((key) => {
-        const variableKey = Array.from(this.attributes).find(
-          (attr) => attr.value === key
+        Object.keys(data).forEach((key) => {
+          const variableKey = Array.from(this.attributes).find(
+            (attr) => attr.value === key
+          );
+
+          if (variableKey) {
+            context[variableKey.name] = { value: data[key], type: "variable" };
+          }
+        });
+
+        this.shadowRoot.innerHTML = renderTemplate(
+          parseTemplate(template.innerHTML)[0],
+          context
         );
+      }
+    };
 
-        if (variableKey) {
-          context[variableKey.name] = { value: data[key], type: "variable" };
-        }
-      });
+    customElements.define(name, components[name]);
+  });
+}
 
-      this.shadowRoot.innerHTML = renderTemplate(
-        parseTemplate(template.innerHTML)[0],
-        context
-      );
-    }
-  };
-
-  customElements.define(name, components[name]);
-});
+window.render = render;
+window.data = data;
