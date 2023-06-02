@@ -12,17 +12,16 @@
       <li>
         <span class="font-bold">{item}</span>
         {#if i > 1 && i < 3}
-        <span class="text-gray-600">{i}</span>
+        <plum-q item="{item}"></plum-q>
         {/if}
         <span class="mx-2">--</span>
-        <plum-q item="{item}"></plum-q>
       </li>
       {/for}
     </ul>
     <p>some other stuff</p>
   </template>
   <template name="plum-q">
-    <span>{item} is shit</span>
+    <span class="text-gray-600">{item}</span>
   </template>
   <body>
     <h1 class="text-3xl font-bold underline">Hello world!</h1>

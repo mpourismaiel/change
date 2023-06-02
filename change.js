@@ -1,138 +1,173 @@
-const forRegex = {
-  reg: /^{#for\s(\w+)\sas\s(\w+),\s?(\w*)}$/,
-  listVariable: 1,
-  itemVariable: 2,
-  indexVariable: 3,
-};
-const ifRegex = {
-  reg: /^{#if\s(.*)}$/,
-  condition: 1,
-};
-
+const variableReg = /^{\s*([.\w]+)\s*}$/;
 const templates = Array.from(document.querySelectorAll("template[name]"));
 const components = {};
 
-function evaluateCondition(context, condition) {
-  const variables = Object.keys(context);
-  const fn = new Function(...variables, `return ${condition}`);
-  return fn(...variables.map((variable) => context[variable].value));
+function createPointer(path) {
+  return {
+    path,
+    lookup: function (context) {
+      return path.split(".").reduce((acc, key) => acc[key], context);
+    },
+  };
 }
 
-function parseTemplate(template, lookingFor = null) {
-  const nodes = [];
+function createVariable(declaration, variable) {
+  return { [declaration]: createPointer(variable) };
+}
 
-  let acc = "";
-  for (let i = 0; i < template.length; i++) {
-    const char = template[i];
-    if (acc[0] === "{") {
-      if (char === "}") {
-        acc += char;
-        if (forRegex.reg.test(acc)) {
-          const match = acc.match(forRegex.reg);
-          const [children, newIndex] = parseTemplate(
-            template.slice(i + 1),
-            "for"
-          );
-          i += newIndex;
-          nodes.push({
-            type: "for",
-            context: [
-              match[forRegex.listVariable].trim(),
-              match[forRegex.itemVariable].trim(),
-              match[forRegex.indexVariable].trim(),
-            ],
-            children,
-          });
-        } else if (ifRegex.reg.test(acc)) {
-          const match = acc.match(ifRegex.reg);
-          const [children, newIndex] = parseTemplate(
-            template.slice(i + 1),
-            "if"
-          );
-          i += newIndex;
-          const condition = match[ifRegex.condition].trim();
-          const normalizedCondition = condition
-            .replace(/&gt;/g, ">")
-            .replace(/&lt;/g, "<")
-            .replace(/&amp;/g, "&");
-          nodes.push({
-            type: "if",
-            context: [normalizedCondition],
-            children,
-          });
-        } else if (acc[1] === "/") {
-          if (lookingFor !== acc.slice(2, -1).trim()) {
-            throw new Error(
-              `Unexpected closing tag, expected ${lookingFor}, got ${acc
-                .slice(2, -1)
-                .trim()}`
-            );
+function parseNode(node) {
+  const result = {
+    node: node,
+    content: [],
+  };
+
+  const patterns = [
+    {
+      name: "for",
+      open: /^{#for\s(\w+)\sas\s(\w+)(,\s?(\w*))?}$/,
+      close: /^{\/for}$/,
+      variables: [null, "listVariable", "itemVariable", null, "indexVariable"],
+    },
+    {
+      name: "if",
+      open: /^{#if\s(.*)}$/,
+      close: /^{\/if}$/,
+      variables: [null, "condition"],
+    },
+  ];
+
+  function createPatternNode(pattern, textContent) {
+    return {
+      node: pattern.name,
+      variables: textContent
+        .match(pattern.open)
+        .reduce(
+          (acc, v, i) =>
+            pattern.variables[i]
+              ? { ...acc, ...createVariable(pattern.variables[i], v) }
+              : acc,
+          {}
+        ),
+      content: [],
+    };
+  }
+
+  function createVariableNode(variable) {
+    return {
+      node: "variable",
+      variables: createVariable(variable, variable),
+    };
+  }
+
+  function processContent(childNodes) {
+    let content = [];
+    let insideBlock = false;
+    let currentPattern = null;
+
+    for (const child of childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const textContent = child.textContent.trim();
+
+        if (insideBlock) {
+          if (currentPattern.close.test(textContent)) {
+            insideBlock = false;
+            currentPattern = null;
+          } else {
+            content[content.length - 1].content.push(textContent);
           }
-          return [nodes, i + 1];
         } else {
-          nodes.push({
-            type: "variable",
-            context: [acc.slice(1, -1).trim()],
-          });
+          const pattern = patterns.find((p) => p.open.test(textContent));
+
+          if (pattern) {
+            insideBlock = true;
+            currentPattern = pattern;
+            content.push(createPatternNode(pattern, textContent));
+          } else {
+            if (variableReg.test(textContent)) {
+              const inside = textContent.match(variableReg);
+              content.push(createVariableNode(inside[1]));
+            } else {
+              content.push(textContent);
+            }
+          }
         }
-
-        acc = "";
-        continue;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const parsedChild = parseNode(child);
+        if (insideBlock) {
+          content[content.length - 1].content.push(parsedChild);
+        } else {
+          content.push(parsedChild);
+        }
       }
-
-      acc += char;
-      continue;
     }
 
-    if (char === "{") {
-      acc = char;
-      continue;
-    }
-
-    const lastNode = nodes[nodes.length - 1];
-    if (!lastNode || lastNode.type !== "html") {
-      nodes.push({ type: "html", value: "" });
-    }
-    nodes[nodes.length - 1].value += char;
-    acc = char;
+    return content;
   }
 
-  return [nodes, template.length];
+  result.content = processContent(node.childNodes);
+  return result;
 }
 
-function renderTemplate(parsedTemplate, context) {
-  const nodes = [];
-  for (const node of parsedTemplate) {
-    if (node.type === "html") {
-      nodes.push(node.value);
-    } else if (node.type === "variable") {
-      nodes.push(context[node.context[0]].value);
-    } else if (node.type === "for") {
-      const [list, item, index] = node.context;
-      const listValue = context[list];
-      if (listValue.type !== "variable") {
-        continue;
-      }
-      const children = listValue.value.map((itemValue, i) => {
-        const childContext = {
-          ...context,
-          [item]: { value: itemValue, type: "variable" },
-        };
-        if (index) {
-          childContext[index] = { value: i, type: "variable" };
-        }
-        return renderTemplate(node.children, childContext);
-      });
-      nodes.push(children.join(""));
-    } else if (node.type === "if") {
-      const [condition] = node.context;
-      if (evaluateCondition(context, condition)) {
-        nodes.push(renderTemplate(node.children, context));
-      }
+function renderNode(parent, node, context) {
+  if (typeof node === "string") {
+    const textNode = document.createTextNode(node);
+    parent.appendChild(textNode);
+  } else if (node.node === "variable") {
+    const variable =
+      node.variables[Object.keys(node.variables)[0]].lookup(context);
+    const textNode = document.createTextNode(variable.value);
+    parent.appendChild(textNode);
+  } else if (node.node === "for") {
+    const content = node.content;
+    const list = node.variables.listVariable.lookup(context);
+    if (list.type !== "variable") {
+      throw new Error("List is not a variable");
     }
-  }
 
-  return nodes.join("");
+    list.value.forEach((item, index) => {
+      const itemContext = {
+        ...context,
+        [node.variables.itemVariable.path]: { value: item, type: "variable" },
+        [node.variables.indexVariable.path]: { value: index, type: "variable" },
+      };
+
+      content.forEach((child) => {
+        renderNode(parent, child, itemContext);
+      });
+    });
+  } else if (node.node === "if") {
+    // TODO: not working
+    const condition = node.variables.condition.lookup(context);
+    const content = node.content;
+    if (condition) {
+      content.forEach((child) => {
+        renderNode(parent, child, context);
+      });
+    }
+  } else {
+    let element;
+    if (node.node instanceof DocumentFragment) {
+      element = document.createElement("div");
+    } else {
+      element = document.createElement(node.node.tagName);
+      // append attributes
+      Object.keys(node.node.attributes).forEach((key) => {
+        let value = node.node.getAttribute(node.node.attributes[key].name);
+        if (variableReg.test(value)) {
+          const variable = value.match(variableReg)[1];
+          value = createVariable(variable, variable)[variable].lookup(
+            context
+          ).value;
+        }
+        element.setAttribute(node.node.attributes[key].name, value);
+      });
+    }
+
+    node.content.forEach((child) => {
+      renderNode(element, child, context);
+    });
+    parent.appendChild(element);
+  }
 }
 
 let data = {};
@@ -164,16 +199,14 @@ function render() {
           }
         });
 
-        this.shadowRoot.innerHTML = renderTemplate(
-          parseTemplate(template.innerHTML)[0],
-          context
-        );
+        const instance = template.content.cloneNode(true);
+        const parsed = parseNode(instance);
+        console.log(parsed);
+        const rendered = renderNode(this.shadowRoot, parsed, context);
+        console.log(rendered);
       }
     };
 
     customElements.define(name, components[name]);
   });
 }
-
-window.render = render;
-window.data = data;
