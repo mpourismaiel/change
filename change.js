@@ -1,14 +1,21 @@
 const variableReg = /{\s*([.\w]+)\s*}/;
 const templates = Array.from(document.querySelectorAll("template[name]"));
 const components = {};
+const pointers = {};
 
 function createPointer(path) {
-  return {
+  pointers[path] = {
     path,
+    dependencies: [],
+    addDependency: function (node) {
+      pointers[path].dependencies.push(node);
+    },
     lookup: function (context) {
       return path.split(".").reduce((acc, key) => acc[key], context);
     },
   };
+
+  return pointers[path];
 }
 
 function createVariable(path) {
@@ -57,20 +64,33 @@ function parseNode(node) {
     let match;
     const reg = new RegExp(variableReg, "g");
     while ((match = reg.exec(textContent)) !== null) {
-      matches.push(match[1]);
+      matches.push(createPointer(match[1]));
     }
 
     const render = (context) => {
-      const vars = matches.map((m) => createPointer(m).lookup(context).value);
+      const vars = matches.map((m) => m.lookup(context).value);
       return textContent.replace(reg, (match, key) => {
-        const index = matches.indexOf(key);
+        let index = -1;
+        for (let i = 0; i < matches.length; i++) {
+          if (matches[i].path === key) {
+            index = i;
+            break;
+          }
+        }
         return vars[index];
+      });
+    };
+
+    const addDependency = (node) => {
+      matches.forEach((m) => {
+        m.addDependency(node);
       });
     };
 
     return {
       node: "variable",
       render,
+      addDependency,
     };
   }
 
@@ -107,6 +127,13 @@ function parseNode(node) {
         }
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const parsedChild = parseNode(child);
+        // TODO: simplify this
+        parsedChild.eventListeners = Array.from(parsedChild.node.attributes)
+          .map((attr) => attr.name)
+          .filter((name) => name.startsWith("on:"))
+          .map((name) => name.replace(/^on:/, ""))
+          .forEach((name) => parsedChild.node.removeAttribute(`on:${name}`));
+
         if (insideBlock) {
           content[content.length - 1].content.push(parsedChild);
         } else {
@@ -126,7 +153,9 @@ function renderNode(parent, node, context) {
   if (typeof node === "string") {
     parent.appendChild(document.createTextNode(node));
   } else if (node.node === "variable") {
-    parent.appendChild(document.createTextNode(node.render(context)));
+    const textNode = document.createTextNode(node.render(context));
+    node.addDependency(textNode);
+    parent.appendChild(textNode);
   } else if (node.node === "for") {
     const content = node.content;
     const list = node.variables.listVariable.lookup(context);
@@ -184,12 +213,30 @@ function renderNode(parent, node, context) {
   }
 }
 
-let data = {};
-data = new Proxy(data, {
-  set(target, key, value) {
+const createHandler = (path = []) => ({
+  get: (target, key) => {
+    if (typeof target[key] === "object" && target[key] !== null) {
+      return new Proxy(target[key], createHandler([...path, key]));
+    } else {
+      console.log("Accessed path:", [...path, key].join("."));
+      return target[key];
+    }
+  },
+  set: (target, key, value) => {
+    console.log("Setting path:", [...path, key].join("."), "to:", value);
     target[key] = value;
+    return true;
+  },
+  ownKeys: (target) => {
+    return Reflect.ownKeys(target);
   },
 });
+
+const proxiedData = new Proxy({}, createHandler());
+
+const updateData = (newData) => {
+  Object.assign(proxiedData, newData);
+};
 
 function render() {
   templates.forEach((template) => {
@@ -203,13 +250,16 @@ function render() {
           return acc;
         }, {});
 
-        Object.keys(data).forEach((key) => {
+        Object.keys(proxiedData).forEach((key) => {
           const variableKey = Array.from(this.attributes).find(
             (attr) => attr.value === key
           );
 
           if (variableKey) {
-            context[variableKey.name] = { value: data[key], type: "variable" };
+            context[variableKey.name] = {
+              value: proxiedData[key],
+              type: "variable",
+            };
           }
         });
 
@@ -221,4 +271,6 @@ function render() {
 
     customElements.define(name, components[name]);
   });
+
+  console.log(pointers);
 }

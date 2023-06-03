@@ -8,6 +8,12 @@
   <template name="header-hello">
     <h1 class="text-2xl font-bold">Hello, {name}!</h1>
   </template>
+  <template name="list-modify">
+    <form>
+      <input type="text" name="item" />
+      <button type="submit">Add</button>
+    </form>
+  </template>
   <template name="my-random-list">
     <span>some</span>
     <ul>
@@ -30,16 +36,21 @@
   </template>
   <body>
     <header-hello name="World"></header-hello>
+    <list-modify></list-modify>
     <my-random-list list="shit"></my-random-list>
     <!-- <my-random-list list="list.shit"></my-random-list> -->
     <text-secondary item="fuck"></text-secondary>
     <script src="../change.js"></script>
     <script>
-      data = {
+      updateData({
         list: { shit: [1, 2, 3, 4, 5, 6] },
         shit: [1, 2, 3, 4, 5, 6],
         fuck: "Hi!",
-      };
+        fn: (e) => {
+          console.log("submitted", e);
+          data.shit.push(data.length);
+        },
+      });
       render();
     </script>
   </body>
