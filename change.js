@@ -1,4 +1,4 @@
-const variableReg = /^{\s*([.\w]+)\s*}$/;
+const variableReg = /{\s*([.\w]+)\s*}/;
 const templates = Array.from(document.querySelectorAll("template[name]"));
 const components = {};
 
@@ -11,8 +11,8 @@ function createPointer(path) {
   };
 }
 
-function createVariable(declaration, variable) {
-  return { [declaration]: createPointer(variable) };
+function createVariable(path) {
+  return createPointer(path);
 }
 
 function parseNode(node) {
@@ -44,7 +44,7 @@ function parseNode(node) {
         .reduce(
           (acc, v, i) =>
             pattern.variables[i]
-              ? { ...acc, ...createVariable(pattern.variables[i], v) }
+              ? { ...acc, [pattern.variables[i]]: createPointer(v) }
               : acc,
           {}
         ),
@@ -52,10 +52,25 @@ function parseNode(node) {
     };
   }
 
-  function createVariableNode(variable) {
+  function createVariableNode(textContent) {
+    const matches = [];
+    let match;
+    const reg = new RegExp(variableReg, "g");
+    while ((match = reg.exec(textContent)) !== null) {
+      matches.push(match[1]);
+    }
+
+    const render = (context) => {
+      const vars = matches.map((m) => createPointer(m).lookup(context).value);
+      return textContent.replace(reg, (match, key) => {
+        const index = matches.indexOf(key);
+        return vars[index];
+      });
+    };
+
     return {
       node: "variable",
-      variables: createVariable(variable, variable),
+      render,
     };
   }
 
@@ -84,8 +99,7 @@ function parseNode(node) {
             content.push(createPatternNode(pattern, textContent));
           } else {
             if (variableReg.test(textContent)) {
-              const inside = textContent.match(variableReg);
-              content.push(createVariableNode(inside[1]));
+              content.push(createVariableNode(textContent));
             } else {
               content.push(textContent);
             }
@@ -110,13 +124,9 @@ function parseNode(node) {
 
 function renderNode(parent, node, context) {
   if (typeof node === "string") {
-    const textNode = document.createTextNode(node);
-    parent.appendChild(textNode);
+    parent.appendChild(document.createTextNode(node));
   } else if (node.node === "variable") {
-    const variable =
-      node.variables[Object.keys(node.variables)[0]].lookup(context);
-    const textNode = document.createTextNode(variable.value);
-    parent.appendChild(textNode);
+    parent.appendChild(document.createTextNode(node.render(context)));
   } else if (node.node === "for") {
     const content = node.content;
     const list = node.variables.listVariable.lookup(context);
@@ -148,16 +158,14 @@ function renderNode(parent, node, context) {
     let element;
     if (node.node instanceof DocumentFragment) {
       element = document.createElement("div");
+      element.setAttribute("change-is-fragment", "true");
     } else {
       element = document.createElement(node.node.tagName);
-      // append attributes
       Object.keys(node.node.attributes).forEach((key) => {
         let value = node.node.getAttribute(node.node.attributes[key].name);
         if (variableReg.test(value)) {
           const variable = value.match(variableReg)[1];
-          value = createVariable(variable, variable)[variable].lookup(
-            context
-          ).value;
+          value = createPointer(variable).lookup(context).value;
         }
         element.setAttribute(node.node.attributes[key].name, value);
       });
@@ -166,7 +174,13 @@ function renderNode(parent, node, context) {
     node.content.forEach((child) => {
       renderNode(element, child, context);
     });
-    parent.appendChild(element);
+    if (element.getAttribute("change-is-fragment") === "true") {
+      for (const child of Array.from(element.children)) {
+        parent.appendChild(child);
+      }
+    } else {
+      parent.appendChild(element);
+    }
   }
 }
 
@@ -201,9 +215,7 @@ function render() {
 
         const instance = template.content.cloneNode(true);
         const parsed = parseNode(instance);
-        console.log(parsed);
-        const rendered = renderNode(this.shadowRoot, parsed, context);
-        console.log(rendered);
+        renderNode(this.shadowRoot, parsed, context);
       }
     };
 

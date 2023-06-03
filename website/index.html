@@ -5,14 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link href="./dist/styles.css" rel="stylesheet" />
   </head>
-  <template name="plum-p">
+  <template name="header-hello">
+    <h1 class="text-2xl font-bold">Hello, {name}!</h1>
+  </template>
+  <template name="my-random-list">
     <span>some</span>
     <ul>
       {#for list as item, i}
       <li>
-        <span class="font-bold">{item}</span>
-        {#if i > 1 && i < 3}
-        <plum-q item="{item}"></plum-q>
+        <text-secondary item="{item}"></text-secondary>
+        {#if i > 1 && i < 5}
+        <span class="font-bold">
+          {i} is rendered because it matches the condition
+        </span>
         {/if}
         <span class="mx-2">--</span>
       </li>
@@ -20,15 +25,21 @@
     </ul>
     <p>some other stuff</p>
   </template>
-  <template name="plum-q">
-    <span class="text-gray-600">{item}</span>
+  <template name="text-secondary">
+    <span class="text-gray-600 mr-2">Item is: {item}</span>
   </template>
   <body>
-    <h1 class="text-3xl font-bold underline">Hello world!</h1>
-    <plum-p list="shit"></plum-p>
+    <header-hello name="World"></header-hello>
+    <my-random-list list="shit"></my-random-list>
+    <!-- <my-random-list list="list.shit"></my-random-list> -->
+    <text-secondary item="fuck"></text-secondary>
     <script src="../change.js"></script>
     <script>
-      data = { shit: [1, 2, 3, 4, 5, 6] };
+      data = {
+        list: { shit: [1, 2, 3, 4, 5, 6] },
+        shit: [1, 2, 3, 4, 5, 6],
+        fuck: "Hi!",
+      };
       render();
     </script>
   </body>
