@@ -19,13 +19,14 @@
     <ul>
       {#for list as item, i}
       <li>
-        <text-secondary item="{item}"></text-secondary>
+        <p>{item} is rendered without a component</p>
+        <!-- <text-secondary item="{item}"></text-secondary>
+        <span class="mx-2">--</span>
         {#if i > 1 && i < 5}
         <span class="font-bold">
           {i} is rendered because it matches the condition
         </span>
-        {/if}
-        <span class="mx-2">--</span>
+        {/if} -->
       </li>
       {/for}
     </ul>
@@ -35,11 +36,11 @@
     <span class="text-gray-600 mr-2">Item is: {item}</span>
   </template>
   <body>
-    <header-hello name="World"></header-hello>
-    <list-modify></list-modify>
+    <!-- <header-hello name="World"></header-hello>
+    <list-modify></list-modify> -->
     <my-random-list list="shit"></my-random-list>
     <!-- <my-random-list list="list.shit"></my-random-list> -->
-    <text-secondary item="fuck"></text-secondary>
+    <!-- <text-secondary item="fuck"></text-secondary> -->
     <script src="../change.js"></script>
     <script>
       updateData({
@@ -52,7 +53,6 @@
         },
       });
       render();
-      data.fuck = "Bye!";
     </script>
   </body>
 </html>

@@ -58,18 +58,64 @@ function parseNode(node) {
   ];
 
   function createPatternNode(pattern, textContent) {
+    const content = [];
+    let original = "";
+    const variables = textContent.match(pattern.open).reduce((acc, v, i) => {
+      if (pattern.variables[i]) {
+        return { ...acc, [pattern.variables[i]]: createPointer(v) };
+      } else {
+        return acc;
+      }
+    }, {});
+
+    function render(parent, context) {
+      const list = variables.listVariable.lookup(context);
+      if (list.type !== "variable") {
+        throw new Error("List is not a variable");
+      }
+      original = list.original;
+
+      // Render list
+      list.value.forEach((item, index) => {
+        const itemContext = {
+          ...context,
+          [variables.itemVariable.path]: {
+            value: item,
+            type: "variable",
+            original: `${original}.${variables.itemVariable.path}`,
+          },
+          [variables.indexVariable.path]: {
+            value: index,
+            type: "variable",
+          },
+        };
+
+        // Render item's content
+        content.forEach((child) => {
+          renderNode(parent, child, itemContext);
+        });
+      });
+    }
+
+    function addDependency(node, context) {
+      if (!subscribers[original]) {
+        subscribers[original] = [];
+      }
+      subscribers[original].push((newValue) => {
+        node.textContent = render(context, {
+          original,
+          path: variables.listVariable.path,
+          newValue,
+        });
+      });
+    }
+
     return {
       node: pattern.name,
-      variables: textContent
-        .match(pattern.open)
-        .reduce(
-          (acc, v, i) =>
-            pattern.variables[i]
-              ? { ...acc, [pattern.variables[i]]: createPointer(v) }
-              : acc,
-          {}
-        ),
-      content: [],
+      render,
+      variables,
+      addDependency,
+      content,
     };
   }
 
@@ -184,23 +230,8 @@ function renderNode(parent, node, context) {
     node.addDependency(textNode, context);
     parent.appendChild(textNode);
   } else if (node.node === "for") {
-    const content = node.content;
-    const list = node.variables.listVariable.lookup(context);
-    if (list.type !== "variable") {
-      throw new Error("List is not a variable");
-    }
-
-    list.value.forEach((item, index) => {
-      const itemContext = {
-        ...context,
-        [node.variables.itemVariable.path]: { value: item, type: "variable" },
-        [node.variables.indexVariable.path]: { value: index, type: "variable" },
-      };
-
-      content.forEach((child) => {
-        renderNode(parent, child, itemContext);
-      });
-    });
+    node.render(parent, context);
+    node.addDependency(parent, context);
   } else if (node.node === "if") {
     // TODO: not working
     const condition = node.variables.condition.lookup(context);
@@ -299,6 +330,7 @@ function render() {
 
         const instance = template.content.cloneNode(true);
         const parsed = parseNode(instance);
+        console.log(parsed);
         renderNode(this.shadowRoot, parsed, context);
       }
     };
