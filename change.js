@@ -2,20 +2,34 @@ const variableReg = /{\s*([.\w]+)\s*}/;
 const templates = Array.from(document.querySelectorAll("template[name]"));
 const components = {};
 const pointers = {};
+const subscribers = {};
 
-function createPointer(path) {
-  pointers[path] = {
-    path,
+function createPointer(pathInContext) {
+  pointers[pathInContext] = {
+    path: pathInContext,
     dependencies: [],
-    addDependency: function (node) {
-      pointers[path].dependencies.push(node);
-    },
-    lookup: function (context) {
-      return path.split(".").reduce((acc, key) => acc[key], context);
+    lookup: function (context, { original, path, newValue } = {}) {
+      if (newValue) {
+        if (path === pathInContext) {
+          // Update context using the new value
+          // TODO: This should not happen during lookup, it should be done as a subscribtion call
+          let variable = context;
+          const keys = pathInContext.split(".");
+          for (let i = 0; i < keys.length - 1; i++) {
+            variable = variable[keys[i]];
+          }
+          variable[keys[keys.length - 1]] = newValue;
+          return { value: newValue, type: "variable", original: pathInContext };
+        }
+      }
+      const variable = pathInContext
+        .split(".")
+        .reduce((acc, key) => acc[key], context);
+      return variable;
     },
   };
 
-  return pointers[path];
+  return pointers[pathInContext];
 }
 
 function createVariable(path) {
@@ -61,15 +75,23 @@ function parseNode(node) {
 
   function createVariableNode(textContent) {
     const matches = [];
+    let originalPaths = [];
     let match;
     const reg = new RegExp(variableReg, "g");
     while ((match = reg.exec(textContent)) !== null) {
       matches.push(createPointer(match[1]));
     }
 
-    const render = (context) => {
-      const vars = matches.map((m) => m.lookup(context).value);
-      return textContent.replace(reg, (match, key) => {
+    const render = (context, { original, path, newValue } = {}) => {
+      const vars = matches.map((m) =>
+        m.lookup(context, { original, path, newValue })
+      );
+      originalPaths = vars.map((v, i) => ({
+        original: v.original,
+        path: matches[i].path,
+        value: v.value,
+      }));
+      return textContent.replace(reg, (_, key) => {
         let index = -1;
         for (let i = 0; i < matches.length; i++) {
           if (matches[i].path === key) {
@@ -77,13 +99,18 @@ function parseNode(node) {
             break;
           }
         }
-        return vars[index];
+        return vars[index].value;
       });
     };
 
-    const addDependency = (node) => {
-      matches.forEach((m) => {
-        m.addDependency(node);
+    const addDependency = (node, context) => {
+      originalPaths.forEach(({ original, path }) => {
+        if (!subscribers[original]) {
+          subscribers[original] = [];
+        }
+        subscribers[original].push((newValue) => {
+          node.textContent = render(context, { original, path, newValue });
+        });
       });
     };
 
@@ -154,7 +181,7 @@ function renderNode(parent, node, context) {
     parent.appendChild(document.createTextNode(node));
   } else if (node.node === "variable") {
     const textNode = document.createTextNode(node.render(context));
-    node.addDependency(textNode);
+    node.addDependency(textNode, context);
     parent.appendChild(textNode);
   } else if (node.node === "for") {
     const content = node.content;
@@ -218,13 +245,19 @@ const createHandler = (path = []) => ({
     if (typeof target[key] === "object" && target[key] !== null) {
       return new Proxy(target[key], createHandler([...path, key]));
     } else {
-      console.log("Accessed path:", [...path, key].join("."));
       return target[key];
     }
   },
   set: (target, key, value) => {
-    console.log("Setting path:", [...path, key].join("."), "to:", value);
     target[key] = value;
+
+    const subscriberPath = [...path, key].join(".");
+    if (subscribers[subscriberPath]) {
+      setTimeout(() => {
+        // TODO: we should create new context for the node when calling subscribers, if not, they will use the old context of the component
+        subscribers[subscriberPath].forEach((fn) => fn(value));
+      }, 0);
+    }
     return true;
   },
   ownKeys: (target) => {
@@ -232,10 +265,10 @@ const createHandler = (path = []) => ({
   },
 });
 
-const proxiedData = new Proxy({}, createHandler());
+const data = new Proxy({}, createHandler());
 
 const updateData = (newData) => {
-  Object.assign(proxiedData, newData);
+  Object.assign(data, newData);
 };
 
 function render() {
@@ -250,14 +283,15 @@ function render() {
           return acc;
         }, {});
 
-        Object.keys(proxiedData).forEach((key) => {
+        Object.keys(data).forEach((key) => {
           const variableKey = Array.from(this.attributes).find(
             (attr) => attr.value === key
           );
 
           if (variableKey) {
             context[variableKey.name] = {
-              value: proxiedData[key],
+              original: key,
+              value: data[key],
               type: "variable",
             };
           }
@@ -271,6 +305,4 @@ function render() {
 
     customElements.define(name, components[name]);
   });
-
-  console.log(pointers);
 }
