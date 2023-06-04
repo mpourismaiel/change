@@ -19,14 +19,14 @@
     <ul>
       {#for list as item, i}
       <li>
-        <p>{item} is rendered without a component</p>
-        <!-- <text-secondary item="{item}"></text-secondary>
+        <p>{item} is rendered without a component, index: {i}</p>
+        <text-secondary item="{item}"></text-secondary>
         <span class="mx-2">--</span>
         {#if i > 1 && i < 5}
         <span class="font-bold">
           {i} is rendered because it matches the condition
         </span>
-        {/if} -->
+        {/if}
       </li>
       {/for}
     </ul>

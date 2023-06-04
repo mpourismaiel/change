@@ -68,14 +68,19 @@ function parseNode(node) {
       }
     }, {});
 
-    function render(parent, context) {
-      const list = variables.listVariable.lookup(context);
+    function render(parent, context, { path, newValue } = {}) {
+      const list = variables.listVariable.lookup(context, {
+        original,
+        path,
+        newValue,
+      });
       if (list.type !== "variable") {
         throw new Error("List is not a variable");
       }
       original = list.original;
 
       // Render list
+      parent.innerHTML = "";
       list.value.forEach((item, index) => {
         const itemContext = {
           ...context,
@@ -87,6 +92,7 @@ function parseNode(node) {
           [variables.indexVariable.path]: {
             value: index,
             type: "variable",
+            original: `${original}.${variables.indexVariable.path}`,
           },
         };
 
@@ -97,12 +103,12 @@ function parseNode(node) {
       });
     }
 
-    function addDependency(node, context) {
+    function addDependency(parent, context) {
       if (!subscribers[original]) {
         subscribers[original] = [];
       }
       subscribers[original].push((newValue) => {
-        node.textContent = render(context, {
+        render(parent, context, {
           original,
           path: variables.listVariable.path,
           newValue,
@@ -230,8 +236,10 @@ function renderNode(parent, node, context) {
     node.addDependency(textNode, context);
     parent.appendChild(textNode);
   } else if (node.node === "for") {
-    node.render(parent, context);
+    const container = new DocumentFragment();
+    node.render(container, context);
     node.addDependency(parent, context);
+    parent.appendChild(container);
   } else if (node.node === "if") {
     // TODO: not working
     const condition = node.variables.condition.lookup(context);
@@ -248,6 +256,7 @@ function renderNode(parent, node, context) {
       element.setAttribute("change-is-fragment", "true");
     } else {
       element = document.createElement(node.node.tagName);
+      element.context = context;
       Object.keys(node.node.attributes).forEach((key) => {
         let value = node.node.getAttribute(node.node.attributes[key].name);
         if (variableReg.test(value)) {
@@ -309,10 +318,13 @@ function render() {
       constructor() {
         super();
         this.attachShadow({ mode: "open" });
-        const context = Array.from(this.attributes).reduce((acc, attr) => {
-          acc[attr.name] = { value: attr.value, type: "text" };
-          return acc;
-        }, {});
+        const context = {
+          ...(this.context || {}),
+          ...Array.from(this.attributes).reduce((acc, attr) => {
+            acc[attr.name] = { value: attr.value, type: "text" };
+            return acc;
+          }, {}),
+        };
 
         Object.keys(data).forEach((key) => {
           const variableKey = Array.from(this.attributes).find(
@@ -330,7 +342,6 @@ function render() {
 
         const instance = template.content.cloneNode(true);
         const parsed = parseNode(instance);
-        console.log(parsed);
         renderNode(this.shadowRoot, parsed, context);
       }
     };
