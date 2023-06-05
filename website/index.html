@@ -9,7 +9,7 @@
     <h1 class="text-2xl font-bold">Hello, {name}!</h1>
   </template>
   <template name="list-modify">
-    <form>
+    <form on:submit="{submitHandler}">
       <input type="text" name="item" />
       <button type="submit">Add</button>
     </form>
@@ -18,7 +18,7 @@
     <span>some</span>
     <ul>
       {#for list as item, i}
-      <li>
+      <li class="my-2">
         <p>{item} is rendered without a component, index: {i}</p>
         <text-secondary item="{item}"></text-secondary>
         <span class="mx-2">--</span>
@@ -36,11 +36,11 @@
     <span class="text-gray-600 mr-2">Item is: {item}</span>
   </template>
   <body>
-    <!-- <header-hello name="World"></header-hello>
-    <list-modify></list-modify> -->
-    <my-random-list list="shit"></my-random-list>
-    <!-- <my-random-list list="list.shit"></my-random-list> -->
-    <!-- <text-secondary item="fuck"></text-secondary> -->
+    <header-hello name="World"></header-hello>
+    <list-modify submitHandler="{fn}"></list-modify>
+    <my-random-list list="{shit}"></my-random-list>
+    <my-random-list list="{list.shit}"></my-random-list>
+    <text-secondary item="{fuck}"></text-secondary>
     <script src="../change.js"></script>
     <script>
       updateData({
@@ -48,6 +48,7 @@
         shit: [1, 2, 3, 4, 5, 6],
         fuck: "Hi!",
         fn: (e) => {
+          e.preventDefault();
           console.log("submitted", e);
           data.shit.push(data.length);
         },

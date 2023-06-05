@@ -5,10 +5,12 @@ const pointers = {};
 const subscribers = {};
 
 function createPointer(pathInContext) {
+  const splitPath = pathInContext.toLowerCase().split(".");
+
   pointers[pathInContext] = {
     path: pathInContext,
     dependencies: [],
-    lookup: function (context, { original, path, newValue } = {}) {
+    lookup: function (context, { path, newValue } = {}) {
       if (newValue) {
         if (path === pathInContext) {
           // Update context using the new value
@@ -22,18 +24,13 @@ function createPointer(pathInContext) {
           return { value: newValue, type: "variable", original: pathInContext };
         }
       }
-      const variable = pathInContext
-        .split(".")
-        .reduce((acc, key) => acc[key], context);
+
+      const variable = splitPath.reduce((acc, key) => acc[key], context);
       return variable;
     },
   };
 
   return pointers[pathInContext];
-}
-
-function createVariable(path) {
-  return createPointer(path);
 }
 
 function parseNode(node) {
@@ -206,12 +203,24 @@ function parseNode(node) {
         }
       } else if (child.nodeType === Node.ELEMENT_NODE) {
         const parsedChild = parseNode(child);
-        // TODO: simplify this
-        parsedChild.eventListeners = Array.from(parsedChild.node.attributes)
-          .map((attr) => attr.name)
-          .filter((name) => name.startsWith("on:"))
-          .map((name) => name.replace(/^on:/, ""))
-          .forEach((name) => parsedChild.node.removeAttribute(`on:${name}`));
+
+        parsedChild.eventListeners = Array.from(
+          parsedChild.node.attributes
+        ).reduce((acc, attr) => {
+          if (!attr.name.startsWith("on:") || !variableReg.test(attr.value)) {
+            return acc;
+          }
+
+          parsedChild.node.removeAttribute(attr.name);
+          const eventHandler = attr.value.match(variableReg)[1];
+          acc.push({
+            value: createPointer(eventHandler),
+            original: eventHandler,
+            event: attr.name.replace(/^on:/, ""),
+            type: "eventListener",
+          });
+          return acc;
+        }, []);
 
         if (insideBlock) {
           content[content.length - 1].content.push(parsedChild);
@@ -228,18 +237,33 @@ function parseNode(node) {
   return result;
 }
 
+function handleEventListeners(node, context, element) {
+  if (!node.eventListeners) {
+    return element;
+  }
+
+  node.eventListeners.forEach(({ value, event }) => {
+    const callback = value.lookup(context).value;
+    element.addEventListener(event, callback);
+  });
+
+  return element;
+}
+
 function renderNode(parent, node, context) {
   if (typeof node === "string") {
-    parent.appendChild(document.createTextNode(node));
+    parent.appendChild(
+      handleEventListeners(node, context, document.createTextNode(node))
+    );
   } else if (node.node === "variable") {
     const textNode = document.createTextNode(node.render(context));
     node.addDependency(textNode, context);
-    parent.appendChild(textNode);
+    parent.appendChild(handleEventListeners(node, context, textNode));
   } else if (node.node === "for") {
     const container = new DocumentFragment();
     node.render(container, context);
     node.addDependency(parent, context);
-    parent.appendChild(container);
+    parent.appendChild(handleEventListeners(node, context, container));
   } else if (node.node === "if") {
     // TODO: not working
     const condition = node.variables.condition.lookup(context);
@@ -255,8 +279,12 @@ function renderNode(parent, node, context) {
       element = document.createElement("div");
       element.setAttribute("change-is-fragment", "true");
     } else {
-      element = document.createElement(node.node.tagName);
-      element.context = context;
+      let tagName = node.node.tagName;
+      if (components[tagName.toUpperCase()]) {
+        element = new components[tagName.toUpperCase()](context);
+      } else {
+        element = document.createElement(tagName);
+      }
       Object.keys(node.node.attributes).forEach((key) => {
         let value = node.node.getAttribute(node.node.attributes[key].name);
         if (variableReg.test(value)) {
@@ -272,10 +300,10 @@ function renderNode(parent, node, context) {
     });
     if (element.getAttribute("change-is-fragment") === "true") {
       for (const child of Array.from(element.children)) {
-        parent.appendChild(child);
+        parent.appendChild(handleEventListeners(node, context, child));
       }
     } else {
-      parent.appendChild(element);
+      parent.appendChild(handleEventListeners(node, context, element));
     }
   }
 }
@@ -314,38 +342,37 @@ const updateData = (newData) => {
 function render() {
   templates.forEach((template) => {
     const name = template.getAttribute("name");
-    components[name] = class extends HTMLElement {
-      constructor() {
+    const componentName = name.toUpperCase();
+    components[componentName] = class extends HTMLElement {
+      constructor(parentContext = null) {
         super();
-        this.attachShadow({ mode: "open" });
-        const context = {
-          ...(this.context || {}),
+        const props = {
+          ...(parentContext || {}),
           ...Array.from(this.attributes).reduce((acc, attr) => {
-            acc[attr.name] = { value: attr.value, type: "text" };
+            if (attr.name === "class" || attr.name === "id") {
+              return acc;
+            }
+
+            if (variableReg.test(attr.value)) {
+              const variable = attr.value.match(variableReg)[1];
+              acc[attr.name] = {
+                original: variable,
+                value: createPointer(variable).lookup(parentContext || data),
+                type: "variable",
+              };
+            } else {
+              acc[attr.name] = { value: attr.value, type: "text" };
+            }
             return acc;
           }, {}),
         };
 
-        Object.keys(data).forEach((key) => {
-          const variableKey = Array.from(this.attributes).find(
-            (attr) => attr.value === key
-          );
-
-          if (variableKey) {
-            context[variableKey.name] = {
-              original: key,
-              value: data[key],
-              type: "variable",
-            };
-          }
-        });
-
         const instance = template.content.cloneNode(true);
         const parsed = parseNode(instance);
-        renderNode(this.shadowRoot, parsed, context);
+        renderNode(this, parsed, props);
       }
     };
 
-    customElements.define(name, components[name]);
+    customElements.define(name, components[componentName]);
   });
 }
