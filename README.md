@@ -44,6 +44,7 @@ Here is a small example:
 
       // This function should ONLY be called once. Rendered your components in the page.
       render();
+    </script>
   </body>
 </html>
 ```
