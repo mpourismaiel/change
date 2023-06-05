@@ -65,9 +65,10 @@ This is meant to be a small framework handling only the most basic needs of a fr
     />
   </div>
   {#for list as item, i}
-  <li>{item} - {i}</li>
-  {/for} {#if listIsEmpty}
-  <p>Please add an item</p>
+    <li>{item} - {i}</li>
+  {/for}
+  {#if listIsEmpty}
+    <p>Please add an item</p>
   {/if}
 </template>
 <script>
