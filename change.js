@@ -4,33 +4,36 @@ const components = {};
 const pointers = {};
 const subscribers = {};
 
+function addSubsciption(pathToVariable, context, callback) {
+  if (!subscribers[pathToVariable]) {
+    subscribers[pathToVariable] = [];
+  }
+  subscribers[pathToVariable].push((newValue) => {
+    // Update context using the new value
+    let variable = context;
+    const keys = pathToVariable.split(".");
+    for (let i = 0; i < keys.length - 1; i++) {
+      variable = variable[keys[i]];
+    }
+    variable[keys[keys.length - 1]] = newValue;
+    callback();
+  });
+}
+
 function createPointer(pathInContext) {
   const splitPath = pathInContext.toLowerCase().split(".");
 
   pointers[pathInContext] = {
     path: pathInContext,
     dependencies: [],
-    lookup: function (context, { path, newValue } = {}) {
-      if (newValue) {
-        if (path === pathInContext) {
-          // Update context using the new value
-          // TODO: This should not happen during lookup, it should be done as a subscribtion call
-          let variable = context;
-          const keys = pathInContext.split(".");
-          for (let i = 0; i < keys.length - 1; i++) {
-            variable = variable[keys[i]];
-          }
-          variable[keys[keys.length - 1]] = newValue;
-          return { value: newValue, type: "variable", original: pathInContext };
-        }
-      }
-
-      const variable = splitPath.reduce((acc, key) => acc[key], context);
-      return variable;
-    },
+    lookup: (context) => splitPath.reduce((acc, key) => acc[key], context),
   };
 
   return pointers[pathInContext];
+}
+
+function createVariable(value, original) {
+  return { value, type: "variable", original };
 }
 
 function parseNode(node) {
@@ -54,16 +57,20 @@ function parseNode(node) {
     },
   ];
 
-  function createPatternNode(pattern, textContent) {
-    const content = [];
-    let original = "";
-    const variables = textContent.match(pattern.open).reduce((acc, v, i) => {
+  function createPatternVariables(pattern, textContent) {
+    return textContent.match(pattern.open).reduce((acc, v, i) => {
       if (pattern.variables[i]) {
         return { ...acc, [pattern.variables[i]]: createPointer(v) };
       } else {
         return acc;
       }
     }, {});
+  }
+
+  function createPatternNode(pattern, textContent) {
+    const content = [];
+    let original = "";
+    const variables = createPatternVariables(pattern, textContent);
 
     function render(parent, context, { path, newValue } = {}) {
       const list = variables.listVariable.lookup(context, {
@@ -81,16 +88,14 @@ function parseNode(node) {
       list.value.forEach((item, index) => {
         const itemContext = {
           ...context,
-          [variables.itemVariable.path]: {
-            value: item,
-            type: "variable",
-            original: `${original}.${variables.itemVariable.path}`,
-          },
-          [variables.indexVariable.path]: {
-            value: index,
-            type: "variable",
-            original: `${original}.${variables.indexVariable.path}`,
-          },
+          [variables.itemVariable.path]: createVariable(
+            item,
+            `${original}.${variables.itemVariable.path}`
+          ),
+          [variables.indexVariable.path]: createVariable(
+            index,
+            `${original}.${variables.indexVariable.path}`
+          ),
         };
 
         // Render item's content
@@ -100,25 +105,20 @@ function parseNode(node) {
       });
     }
 
-    function addDependency(parent, context) {
-      if (!subscribers[original]) {
-        subscribers[original] = [];
-      }
-      subscribers[original].push((newValue) => {
-        render(parent, context, {
-          original,
-          path: variables.listVariable.path,
-          newValue,
-        });
-      });
-    }
-
     return {
       node: pattern.name,
-      render,
       variables,
-      addDependency,
       content,
+      render,
+      addDependency(parent, context) {
+        addSubsciption(original, context, (newValue) => {
+          render(parent, context, {
+            original,
+            path: variables.listVariable.path,
+            newValue,
+          });
+        });
+      },
     };
   }
 
@@ -154,10 +154,7 @@ function parseNode(node) {
 
     const addDependency = (node, context) => {
       originalPaths.forEach(({ original, path }) => {
-        if (!subscribers[original]) {
-          subscribers[original] = [];
-        }
-        subscribers[original].push((newValue) => {
+        addSubsciption(original, context, (newValue) => {
           node.textContent = render(context, { original, path, newValue });
         });
       });
@@ -321,10 +318,7 @@ const createHandler = (path = []) => ({
 
     const subscriberPath = [...path, key].join(".");
     if (subscribers[subscriberPath]) {
-      setTimeout(() => {
-        // TODO: we should create new context for the node when calling subscribers, if not, they will use the old context of the component
-        subscribers[subscriberPath].forEach((fn) => fn(value));
-      }, 0);
+      subscribers[subscriberPath].forEach((fn) => fn(value));
     }
     return true;
   },
@@ -355,11 +349,10 @@ function render() {
 
             if (variableReg.test(attr.value)) {
               const variable = attr.value.match(variableReg)[1];
-              acc[attr.name] = {
+              acc[attr.name] = createVariable({
                 original: variable,
                 value: createPointer(variable).lookup(parentContext || data),
-                type: "variable",
-              };
+              });
             } else {
               acc[attr.name] = { value: attr.value, type: "text" };
             }
