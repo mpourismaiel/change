@@ -32,7 +32,7 @@ function createPointer(pathInContext) {
   return pointers[pathInContext];
 }
 
-function createVariable(value, original) {
+function createVariable(value, original, type = "variable") {
   return { value, type: "variable", original };
 }
 
@@ -333,39 +333,41 @@ const updateData = (newData) => {
   Object.assign(data, newData);
 };
 
+class ChangeComponent extends HTMLElement {
+  constructor(parentContext = null) {
+    super();
+
+    const propsContext = parentContext ? parentContext : data;
+    const props = {
+      ...(parentContext || {}),
+      ...Array.from(this.attributes).reduce((acc, attr) => {
+        if (variableReg.test(attr.value)) {
+          const variable = attr.value.match(variableReg)[1];
+          const value = createPointer(variable).lookup(propsContext);
+          acc[attr.name] = createVariable(value, variable);
+        } else {
+          acc[attr.name] = createVariable(attr.value, null, "text");
+        }
+        return acc;
+      }, {}),
+    };
+
+    const instance = this.constructor.template.content.cloneNode(true);
+    const parsed = parseNode(instance);
+    renderNode(this, parsed, props);
+  }
+}
+
 function render() {
   templates.forEach((template) => {
     const name = template.getAttribute("name");
     const componentName = name.toUpperCase();
-    components[componentName] = class extends HTMLElement {
-      constructor(parentContext = null) {
-        super();
-        const props = {
-          ...(parentContext || {}),
-          ...Array.from(this.attributes).reduce((acc, attr) => {
-            if (attr.name === "class" || attr.name === "id") {
-              return acc;
-            }
-
-            if (variableReg.test(attr.value)) {
-              const variable = attr.value.match(variableReg)[1];
-              acc[attr.name] = createVariable({
-                original: variable,
-                value: createPointer(variable).lookup(parentContext || data),
-              });
-            } else {
-              acc[attr.name] = { value: attr.value, type: "text" };
-            }
-            return acc;
-          }, {}),
-        };
-
-        const instance = template.content.cloneNode(true);
-        const parsed = parseNode(instance);
-        renderNode(this, parsed, props);
+    components[componentName] = class extends ChangeComponent {
+      static template = template;
+      constructor(parentContext) {
+        super(parentContext);
       }
     };
-
     customElements.define(name, components[componentName]);
   });
 }
