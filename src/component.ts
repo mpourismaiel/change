@@ -1,4 +1,5 @@
 import { createPointer, createVariable } from "./context";
+import { data } from "./data";
 import parseNode from "./parser";
 import renderNode from "./render";
 import { variableReg, components, templates } from "./utils";
@@ -12,7 +13,11 @@ class ChangeComponent extends HTMLElement {
       ...(parentContext || {}),
       ...Array.from(this.attributes).reduce((acc, attr) => {
         if (variableReg.test(attr.value)) {
-          const variable = attr.value.match(variableReg)[1];
+          const variable = attr.value.match(variableReg)?.[1];
+          if (!variable) {
+            throw new Error("Invalid variable");
+          }
+
           const value = createPointer(variable).lookup(propsContext);
           acc[attr.name] = createVariable(value, variable);
         } else {
