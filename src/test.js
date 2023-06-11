@@ -1,38 +1,5 @@
-let subscribers = {};
-
-const createHandler = (path = []) => ({
-  get: (target, key) => {
-    if (typeof target[key] === "object" && target[key] !== null) {
-      return new Proxy(target[key], createHandler([...path, key]));
-    } else {
-      return target[key];
-    }
-  },
-  set: (target, key, value) => {
-    target[key] = value;
-
-    const subscriberPath = [...path, key].join(".");
-    if (subscribers[subscriberPath]) {
-      subscribers[subscriberPath].forEach((fn) => fn(value));
-    }
-    return true;
-  },
-  ownKeys: (target) => {
-    return Reflect.ownKeys(target);
-  },
-});
-
-function createPointer(pathInContext) {
-  const splitPath = pathInContext.toLowerCase().split(".");
-
-  pointers[pathInContext] = {
-    path: pathInContext,
-    dependencies: [],
-    lookup: (context) => splitPath.reduce((acc, key) => acc[key], context),
-  };
-
-  return pointers[pathInContext];
-}
+import { subscribers } from "./context";
+import { createHandler } from "./data";
 
 function test(name, fn) {
   console.log(`Test: ${name}`);

@@ -41,9 +41,9 @@
     <my-random-list list="{shit}"></my-random-list>
     <!-- <my-random-list list="{list.shit}"></my-random-list>
     <text-secondary item="{fuck}"></text-secondary> -->
-    <script src="../change.js"></script>
+    <script src="../dist/change.js"></script>
     <script>
-      updateData({
+      const data = change.data({
         list: { shit: [1, 2, 3, 4, 5, 6] },
         shit: [1, 2, 3, 4, 5, 6],
         fuck: "Hi!",
@@ -53,7 +53,7 @@
           data.shit.push(data.length);
         },
       });
-      render();
+      change.render();
     </script>
   </body>
 </html>
