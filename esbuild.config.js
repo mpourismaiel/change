@@ -3,9 +3,11 @@ const esbuild = require("esbuild");
 const isProduction = process.env.NODE_ENV === "production";
 
 let sharedConfig = {
-  entryPoints: ["src/index.js"],
+  entryPoints: ["src/index.ts"],
   bundle: true,
   outfile: "dist/change.js",
+  loader: { ".ts": "ts" },
+  target: "es2020",
 };
 
 if (isProduction) {
