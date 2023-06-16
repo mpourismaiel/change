@@ -1,43 +1,71 @@
-import { addSubsciption, createPointer, createVariable } from "./context";
+import { EventListener, Variable, createPointer } from "./context";
+import { addSubsciption } from "./data";
 import renderNode from "./render";
+import {
+  ChangeNode,
+  ChangeNodeWithChildren,
+  ChangePatternNode,
+  ChangeVariableNode,
+  Pattern,
+  Pointer,
+} from "./types";
 import { variableReg } from "./utils";
 
-export function createPatternVariables(pattern, textContent) {
+export const patterns: Pattern[] = [
+  {
+    name: "for",
+    open: /^{#for\s(\w+)\sas\s(\w+)(,\s?(\w*))?}$/,
+    close: /^{\/for}$/,
+    variables: [null, "listVariable", "itemVariable", null, "indexVariable"],
+  },
+  {
+    name: "if",
+    open: /^{#if\s(.*)}$/,
+    close: /^{\/if}$/,
+    variables: [null, "condition"],
+  },
+];
+
+export function createPatternVariables(
+  pattern,
+  textContent
+): Record<string, Pointer> {
   return textContent.match(pattern.open).reduce((acc, v, i) => {
     if (pattern.variables[i]) {
-      return { ...acc, [pattern.variables[i]]: createPointer(v) };
+      const pointer = createPointer(v);
+      if (!pointer) {
+        return acc;
+      }
+
+      return { ...acc, [pattern.variables[i]]: pointer };
     } else {
       return acc;
     }
   }, {});
 }
 
-export function createPatternNode(pattern, textContent) {
-  const content = [];
+export function createPatternNode(pattern, textContent): ChangePatternNode {
+  const content: ChangeNode[] = [];
   let original = "";
   const variables = createPatternVariables(pattern, textContent);
 
-  function render(parent, context, { path, newValue } = {}) {
-    const list = variables.listVariable.lookup(context, {
-      original,
-      path,
-      newValue,
-    });
-    if (list.type !== "variable") {
-      throw new Error("List is not a variable");
+  function render(context, parent) {
+    const list = variables.listVariable.lookup(context);
+    if (!Array.isArray(list)) {
+      throw new Error("List is not an array");
     }
     original = list.original;
 
     // Render list
     parent.innerHTML = "";
-    list.value.forEach((item, index) => {
+    (list.valueOf() as Array<unknown>).forEach((item, index) => {
       const itemContext = {
         ...context,
-        [variables.itemVariable.path]: createVariable(
+        [variables.itemVariable.path]: new Variable(
           item,
           `${original}.${variables.itemVariable.path}`
         ),
-        [variables.indexVariable.path]: createVariable(
+        [variables.indexVariable.path]: new Variable(
           index,
           `${original}.${variables.indexVariable.path}`
         ),
@@ -57,34 +85,27 @@ export function createPatternNode(pattern, textContent) {
     render,
     addDependency(parent, context) {
       addSubsciption(original, context, (newValue) => {
-        render(parent, context, {
-          original,
-          path: variables.listVariable.path,
-          newValue,
-        });
+        render(parent, context);
       });
     },
   };
 }
 
-export function createVariableNode(textContent) {
-  const matches = [];
+export function createVariableNode(textContent): ChangeVariableNode {
+  const matches: Pointer[] = [];
   let originalPaths = [];
   let match;
   const reg = new RegExp(variableReg, "g");
   while ((match = reg.exec(textContent)) !== null) {
-    matches.push(createPointer(match[1]));
+    const pointer = createPointer(match[1]);
+    if (!pointer) {
+      continue;
+    }
+    matches.push(pointer);
   }
 
-  const render = (context, { original, path, newValue } = {}) => {
-    const vars = matches.map((m) =>
-      m.lookup(context, { original, path, newValue })
-    );
-    originalPaths = vars.map((v, i) => ({
-      original: v.original,
-      path: matches[i].path,
-      value: v.value,
-    }));
+  const render = (context) => {
+    const vars = matches.map((m) => m.lookup(context));
     return textContent.replace(reg, (_, key) => {
       let index = -1;
       for (let i = 0; i < matches.length; i++) {
@@ -93,61 +114,46 @@ export function createVariableNode(textContent) {
           break;
         }
       }
-      return vars[index].value;
-    });
-  };
-
-  const addDependency = (node, context) => {
-    originalPaths.forEach(({ original, path }) => {
-      addSubsciption(original, context, (newValue) => {
-        node.textContent = render(context, { original, path, newValue });
-      });
+      return vars[index].valueOf();
     });
   };
 
   return {
     node: "variable",
     render,
-    addDependency,
+    addDependency(node, context) {
+      originalPaths.forEach(({ original, path }) => {
+        addSubsciption(original, context, (newValue) => {
+          node.textContent = render(context);
+        });
+      });
+    },
   };
 }
 
-function parseNode(node) {
-  const result = {
+function parseNode(node: Node): ChangeNode {
+  const result: ChangeNode = {
     node: node,
     content: [],
   };
 
-  const patterns = [
-    {
-      name: "for",
-      open: /^{#for\s(\w+)\sas\s(\w+)(,\s?(\w*))?}$/,
-      close: /^{\/for}$/,
-      variables: [null, "listVariable", "itemVariable", null, "indexVariable"],
-    },
-    {
-      name: "if",
-      open: /^{#if\s(.*)}$/,
-      close: /^{\/if}$/,
-      variables: [null, "condition"],
-    },
-  ];
-
   function processContent(childNodes) {
-    let content = [];
+    let content: ChangeNode[] = [];
     let insideBlock = false;
-    let currentPattern = null;
+    let currentPattern: Pattern | null = null;
 
     for (const child of childNodes) {
       if (child.nodeType === Node.TEXT_NODE) {
         const textContent = child.textContent.trim();
 
         if (insideBlock) {
-          if (currentPattern.close.test(textContent)) {
+          if (currentPattern && currentPattern.close.test(textContent)) {
             insideBlock = false;
             currentPattern = null;
           } else {
-            content[content.length - 1].content.push(textContent);
+            (content[content.length - 1] as ChangePatternNode).content.push(
+              textContent
+            );
           }
         } else {
           const pattern = patterns.find((p) => p.open.test(textContent));
@@ -168,25 +174,36 @@ function parseNode(node) {
         const parsedChild = parseNode(child);
 
         parsedChild.eventListeners = Array.from(
-          parsedChild.node.attributes
-        ).reduce((acc, attr) => {
-          if (!attr.name.startsWith("on:") || !variableReg.test(attr.value)) {
-            return acc;
-          }
+          (parsedChild.node as HTMLElement).attributes
+        ).reduce(
+          (acc: EventListener[], attr: { name: string; value: string }) => {
+            if (!attr.name.startsWith("on:") || !variableReg.test(attr.value)) {
+              return acc;
+            }
 
-          parsedChild.node.removeAttribute(attr.name);
-          const eventHandler = attr.value.match(variableReg)[1];
-          acc.push({
-            value: createPointer(eventHandler),
-            original: eventHandler,
-            event: attr.name.replace(/^on:/, ""),
-            type: "eventListener",
-          });
-          return acc;
-        }, []);
+            (parsedChild.node as HTMLElement).removeAttribute(attr.name);
+            const variable = attr.value.match(variableReg);
+            if (!variable) {
+              return acc;
+            }
+
+            const eventHandler = variable[1];
+            acc.push(
+              new EventListener(
+                createPointer(eventHandler),
+                eventHandler,
+                attr.name.replace(/^on:/, "")
+              )
+            );
+            return acc;
+          },
+          []
+        );
 
         if (insideBlock) {
-          content[content.length - 1].content.push(parsedChild);
+          (content[content.length - 1] as ChangeNodeWithChildren).content.push(
+            parsedChild
+          );
         } else {
           content.push(parsedChild);
         }

@@ -29,12 +29,13 @@ class ChangeComponent extends HTMLElement {
 
     const instance = this.constructor.template.content.cloneNode(true);
     const parsed = parseNode(instance);
+    console.log(parsed);
     renderNode(this, parsed, props);
   }
 }
 
 function render() {
-  templates.forEach((template) => {
+  templates().forEach((template) => {
     const name = template.getAttribute("name");
     const componentName = name.toUpperCase();
     components[componentName] = class extends ChangeComponent {

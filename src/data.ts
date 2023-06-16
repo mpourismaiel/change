@@ -1,4 +1,30 @@
-import { subscribers } from "./context";
+import { ContextDataType, Subscribers } from "./types";
+
+export let subscribers: Subscribers = {};
+
+export function resetSubscribers() {
+  subscribers = {};
+}
+
+export function addSubsciption(
+  pathToVariable: string,
+  context: ContextDataType,
+  callback: Function
+) {
+  if (!subscribers[pathToVariable]) {
+    subscribers[pathToVariable] = [];
+  }
+  subscribers[pathToVariable].push((newValue) => {
+    // Update context using the new value
+    let variable: ContextDataType = context;
+    const keys = pathToVariable.split(".");
+    for (let i = 0; i < keys.length - 1; i++) {
+      variable = variable[keys[i]];
+    }
+    variable[keys[keys.length - 1]] = newValue;
+    callback();
+  });
+}
 
 const callSubscribers = (path, key, value) => {
   const subscriberPath = [...path, key].join(".");

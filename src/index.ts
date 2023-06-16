@@ -1,7 +1,12 @@
 import render from "./component";
-import updateData from "./data";
+import { pointers } from "./context";
+import updateData, { subscribers } from "./data";
 
-window.change = {
+(window as any).change = {
   render,
   data: updateData,
+  DEBUG: {
+    subscribers,
+    pointers,
+  },
 };

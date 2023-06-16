@@ -1,47 +1,39 @@
 import test from "ava";
-import { resetSubscribers, subscribers } from "./context";
-import { createHandler } from "./data";
+import { TextVariable, Variable, createPointer } from "./context";
+import { Pointer } from "./types";
 
-test("should get and set", (t) => {
-  const state = new Proxy({}, createHandler());
-  resetSubscribers();
-  state.foo = "foo";
-  t.is(state.foo, "foo");
+test("should create variable", (t) => {
+  const variable = new Variable("value", "variable");
+  t.is(variable.value, "value");
+  t.is(variable.original, "variable");
+
+  const variable2 = new TextVariable("value", "variable");
+  t.is(variable2.value, "value");
+  t.is(variable2.original, "variable");
 });
 
-test("should subscribe to changes", (t) => {
-  const state = new Proxy({}, createHandler());
-  resetSubscribers();
-  let calls = 0;
-  subscribers["foo"] = [() => calls++];
+test("should create pointer", (t) => {
+  const nullPointer = createPointer();
+  t.is(nullPointer, null);
 
-  state.foo = "foo";
-  t.is(calls, 1);
+  const pointer = createPointer("variable") as Pointer;
+  t.is(pointer.path, "variable");
+  t.deepEqual(pointer.dependencies, []);
+  t.is(typeof pointer.lookup, "function");
 
-  state.foo = "bar";
-  t.is(calls, 2);
-});
+  const context = {
+    variable: new Variable("value", "variable"),
+  };
+  t.deepEqual(pointer.lookup(context), "value");
+  t.is(nullPointer, null);
 
-test("should subscribe to nested changes", (t) => {
-  const state = new Proxy({}, createHandler());
-  resetSubscribers();
-  let calls = 0;
-  subscribers["foo.bar"] = [() => calls++];
+  const textPointer = createPointer("variable") as Pointer;
+  t.is(pointer.path, "variable");
+  t.deepEqual(pointer.dependencies, []);
+  t.is(typeof pointer.lookup, "function");
 
-  state.foo = { bar: "foo" };
-  t.is(calls, 1);
-
-  state.foo.bar = "bar";
-  t.is(calls, 2);
-
-  let calls2 = 0;
-  subscribers["foo.bar.baz"] = [() => calls2++];
-
-  state.foo.bar = { baz: "baz" };
-  t.is(calls, 3);
-  t.is(calls2, 1);
-
-  state.foo.bar.baz = "foo";
-  t.is(calls, 4);
-  t.is(calls2, 2);
+  const context2 = {
+    variable: new TextVariable("value", "variable"),
+  };
+  t.deepEqual(pointer.lookup(context), "value");
 });
