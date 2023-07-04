@@ -1,39 +1,40 @@
-import test from "ava";
 import { TextVariable, Variable, createPointer } from "./context";
 import { Pointer } from "./types";
 
-test("should create variable", (t) => {
-  const variable = new Variable("value", "variable");
-  t.is(variable.value, "value");
-  t.is(variable.original, "variable");
+describe("context", () => {
+  test("should create variable", () => {
+    const variable = new Variable("value", "variable");
+    expect(variable.value).toEqual("value");
+    expect(variable.original).toEqual("variable");
 
-  const variable2 = new TextVariable("value", "variable");
-  t.is(variable2.value, "value");
-  t.is(variable2.original, "variable");
-});
+    const variable2 = new TextVariable("value", "variable");
+    expect(variable2.value).toEqual("value");
+    expect(variable2.original).toEqual("variable");
+  });
 
-test("should create pointer", (t) => {
-  const nullPointer = createPointer();
-  t.is(nullPointer, null);
+  test("should create pointer", () => {
+    const nullPointer = createPointer();
+    expect(nullPointer).toEqual(null);
 
-  const pointer = createPointer("variable") as Pointer;
-  t.is(pointer.path, "variable");
-  t.deepEqual(pointer.dependencies, []);
-  t.is(typeof pointer.lookup, "function");
+    const pointer = createPointer("variable") as Pointer;
+    expect(pointer.path).toEqual("variable");
+    expect(pointer.dependencies).toEqual([]);
+    expect(typeof pointer.lookup).toEqual("function");
 
-  const context = {
-    variable: new Variable("value", "variable"),
-  };
-  t.deepEqual(pointer.lookup(context), "value");
-  t.is(nullPointer, null);
+    const context = {
+      variable: new Variable("value", "variable"),
+    };
+    expect(pointer.lookup(context)).toEqual("value");
+    expect(nullPointer).toEqual(null);
 
-  const textPointer = createPointer("variable") as Pointer;
-  t.is(pointer.path, "variable");
-  t.deepEqual(pointer.dependencies, []);
-  t.is(typeof pointer.lookup, "function");
+    const textPointer = createPointer("variable") as Pointer;
+    expect(pointer.path).toEqual("variable");
+    expect(pointer.dependencies).toEqual([]);
+    expect(typeof pointer.lookup).toEqual("function");
 
-  const context2 = {
-    variable: new TextVariable("value", "variable"),
-  };
-  t.deepEqual(pointer.lookup(context), "value");
+    const context2 = {
+      variable: new TextVariable("value", "variable"),
+    };
+    expect(pointer.lookup(context)).toEqual("value");
+  });
 });
