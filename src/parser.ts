@@ -3,7 +3,6 @@ import { addSubsciption } from "./data";
 import renderNode from "./render";
 import {
   ChangeNode,
-  ChangeNodeWithChildren,
   ChangePatternNode,
   ChangeVariableNode,
   Pattern,
@@ -119,6 +118,7 @@ export function createVariableNode(textContent): ChangeVariableNode {
   };
 
   return {
+    content: [],
     node: "variable",
     render,
     addDependency(node, context) {
@@ -145,6 +145,9 @@ function parseNode(node: Node): ChangeNode {
     for (const child of childNodes) {
       if (child.nodeType === Node.TEXT_NODE) {
         const textContent = child.textContent.trim();
+        if (!textContent) {
+          continue;
+        }
 
         if (insideBlock) {
           if (currentPattern && currentPattern.close.test(textContent)) {
@@ -201,9 +204,7 @@ function parseNode(node: Node): ChangeNode {
         );
 
         if (insideBlock) {
-          (content[content.length - 1] as ChangeNodeWithChildren).content.push(
-            parsedChild
-          );
+          content[content.length - 1].content.push(parsedChild);
         } else {
           content.push(parsedChild);
         }

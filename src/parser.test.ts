@@ -96,5 +96,14 @@ test("should create valid parsed node", (t) => {
   const result = parseNode(
     dom.window.document.querySelector("#template").content.cloneNode(true)
   );
-  t.is(result.node instanceof DocumentFragment, true);
+  t.is((result.node as Node).nodeType, 11);
+  t.is(result.content.length, 1);
+  t.is((result.content[0].node as Node).nodeName, "DIV");
+  t.is(result.content[0].eventListeners?.length, 0);
+  t.is(result.content[0].content.length, 3);
+  t.is(result.content[0].content[0] as string, "Hello,");
+  t.is((result.content[0].content[1].node as Node).nodeName, "SPAN");
+  t.is(result.content[0].content[1].eventListeners?.length, 0);
+  t.is(result.content[0].content[1].content[0].node, "variable");
+  t.is(result.content[0].content[2] as string, "!");
 });

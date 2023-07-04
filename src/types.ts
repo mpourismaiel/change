@@ -30,16 +30,13 @@ export type Pattern = {
 };
 
 export type ChangeBasicNode = {
-  node: string | HTMLElement;
+  node: string | HTMLElement | Node;
   eventListeners?: Array<IEventListener>;
+  content: Array<ChangeNode>;
 };
 
 export type ChangeNodeWithRender = {
   render: (context: ContextDataType, parent?: HTMLElement) => void | unknown;
-};
-
-export type ChangeNodeWithChildren = ChangeBasicNode & {
-  content: Array<ChangeNode>;
 };
 
 export type ChangeNodeWithDependencies = ChangeBasicNode & {
@@ -50,14 +47,12 @@ export type ChangeVariableNode = ChangeNodeWithDependencies &
   Required<ChangeNodeWithRender>;
 
 export type ChangePatternNode = ChangeNodeWithDependencies &
-  ChangeNodeWithChildren &
   ChangeNodeWithRender & {
-    content: Array<ChangeNode>;
+    content: Array<ChangeNode | string>;
     variables?: Record<string, Pointer>;
   };
 
 export type ChangeNode =
   | ChangeBasicNode
-  | ChangeNodeWithChildren
   | ChangeVariableNode
   | ChangePatternNode;
